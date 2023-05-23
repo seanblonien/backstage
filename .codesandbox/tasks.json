@@ -1,0 +1,20 @@
+{
+  "$schema": "https://codesandbox.io/schemas/tasks.json",
+  "setupTasks": [
+    {
+      "name": "Installing Dependencies",
+      "command": "yarn set version berry && yarn install"
+    }
+  ],
+  "tasks": {
+    "start": {
+      "name": "App Start",
+      "command": "yarn start",
+      "runAtStart": true,
+      "preview": {
+        "port": 3000,
+        "prLink": "direct"
+      }
+    }
+  }
+}
