@@ -1,5 +1,50 @@
 # @backstage/plugin-periskop-backend
 
+## 0.1.18
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/backend-common@0.19.1
+  - @backstage/backend-plugin-api@0.5.4
+  - @backstage/config@1.0.8
+
+## 0.1.18-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/backend-common@0.19.1-next.0
+  - @backstage/backend-plugin-api@0.5.4-next.0
+  - @backstage/config@1.0.8
+
+## 0.1.17
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/backend-common@0.19.0
+  - @backstage/backend-plugin-api@0.5.3
+  - @backstage/config@1.0.8
+
+## 0.1.17-next.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/backend-common@0.19.0-next.2
+  - @backstage/backend-plugin-api@0.5.3-next.2
+  - @backstage/config@1.0.7
+
+## 0.1.17-next.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/backend-common@0.19.0-next.1
+  - @backstage/backend-plugin-api@0.5.3-next.1
+  - @backstage/config@1.0.7
+
 ## 0.1.17-next.0
 
 ### Patch Changes

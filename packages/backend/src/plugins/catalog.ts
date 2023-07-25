@@ -19,6 +19,7 @@ import { ScaffolderEntitiesProcessor } from '@backstage/plugin-scaffolder-backen
 import { Router } from 'express';
 import { PluginEnvironment } from '../types';
 import { DemoEventBasedEntityProvider } from './DemoEventBasedEntityProvider';
+import { UnprocessedEntitiesModule } from '@backstage/plugin-catalog-backend-module-unprocessed';
 
 export default async function createPlugin(
   env: PluginEnvironment,
@@ -34,6 +35,12 @@ export default async function createPlugin(
   builder.addEntityProvider(demoProvider);
 
   const { processingEngine, router } = await builder.build();
+
+  const unprocessed = new UnprocessedEntitiesModule(
+    await env.database.getClient(),
+    router,
+  );
+  unprocessed.registerRoutes();
   await processingEngine.start();
   return router;
 }

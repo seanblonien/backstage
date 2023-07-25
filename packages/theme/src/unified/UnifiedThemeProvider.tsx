@@ -16,12 +16,18 @@
 
 import React, { ReactNode } from 'react';
 import './MuiClassNameSetup';
-import { ThemeProvider } from '@material-ui/core/styles';
+import { CssBaseline } from '@material-ui/core';
+import {
+  ThemeProvider,
+  StylesProvider,
+  createGenerateClassName,
+  Theme as Mui4Theme,
+} from '@material-ui/core/styles';
 import {
   StyledEngineProvider,
   ThemeProvider as Mui5Provider,
+  Theme as Mui5Theme,
 } from '@mui/material/styles';
-import CSSBaseline from '@mui/material/CssBaseline';
 import { UnifiedTheme } from './types';
 
 /**
@@ -35,8 +41,16 @@ export interface UnifiedThemeProviderProps {
   noCssBaseline?: boolean;
 }
 
+// Background at https://mui.com/x/migration/migration-data-grid-v4/#using-mui-core-v4-with-v5
+// Rather than disabling globals and custom seed, we instead only set a production prefix that
+// won't collide with Material UI 5 styles. We've already got a separate class name generator for v5 set
+// up in MuiClassNameSetup.ts, so only the production JSS needs deduplication.
+const generateV4ClassName = createGenerateClassName({
+  productionPrefix: 'jss4-',
+});
+
 /**
- * Provides themes for all MUI versions supported by the provided unified theme.
+ * Provides themes for all Material UI versions supported by the provided unified theme.
  *
  * @public
  */
@@ -45,12 +59,12 @@ export function UnifiedThemeProvider(
 ): JSX.Element {
   const { children, theme, noCssBaseline = false } = props;
 
-  const v4Theme = theme.getTheme('v4');
-  const v5Theme = theme.getTheme('v5');
+  const v4Theme = theme.getTheme('v4') as Mui4Theme;
+  const v5Theme = theme.getTheme('v5') as Mui5Theme;
 
   let cssBaseline: JSX.Element | undefined = undefined;
   if (!noCssBaseline) {
-    cssBaseline = <CSSBaseline />;
+    cssBaseline = <CssBaseline />;
   }
 
   let result = (
@@ -61,7 +75,11 @@ export function UnifiedThemeProvider(
   );
 
   if (v4Theme) {
-    result = <ThemeProvider theme={v4Theme}>{result}</ThemeProvider>;
+    result = (
+      <StylesProvider generateClassName={generateV4ClassName}>
+        <ThemeProvider theme={v4Theme}>{result}</ThemeProvider>
+      </StylesProvider>
+    );
   }
 
   if (v5Theme) {

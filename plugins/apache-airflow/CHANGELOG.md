@@ -1,5 +1,69 @@
 # @backstage/plugin-apache-airflow
 
+## 0.2.13
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/core-components@0.13.3
+  - @backstage/core-plugin-api@1.5.3
+
+## 0.2.13-next.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/core-plugin-api@1.5.3-next.1
+  - @backstage/core-components@0.13.3-next.2
+
+## 0.2.13-next.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/core-components@0.13.3-next.1
+  - @backstage/core-plugin-api@1.5.3-next.0
+
+## 0.2.13-next.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/core-components@0.13.3-next.0
+  - @backstage/core-plugin-api@1.5.2
+
+## 0.2.12
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/core-plugin-api@1.5.2
+  - @backstage/core-components@0.13.2
+
+## 0.2.12-next.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/core-components@0.13.2-next.3
+  - @backstage/core-plugin-api@1.5.2-next.0
+
+## 0.2.12-next.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/core-components@0.13.2-next.2
+  - @backstage/core-plugin-api@1.5.2-next.0
+
+## 0.2.12-next.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @backstage/core-components@0.13.2-next.1
+  - @backstage/core-plugin-api@1.5.2-next.0
+
 ## 0.2.12-next.0
 
 ### Patch Changes

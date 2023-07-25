@@ -17,6 +17,7 @@
 import express from 'express';
 import {
   Client,
+  ClientAuthMethod,
   Issuer,
   Strategy as OidcStrategy,
   TokenSet,
@@ -48,6 +49,7 @@ import {
   commonByEmailLocalPartResolver,
   commonByEmailResolver,
 } from '../resolvers';
+import { BACKSTAGE_SESSION_EXPIRATION } from '../../lib/session';
 
 type PrivateInfo = {
   refreshToken?: string;
@@ -71,6 +73,7 @@ export type Options = OAuthProviderOptions & {
   metadataUrl: string;
   scope?: string;
   prompt?: string;
+  tokenEndpointAuthMethod?: ClientAuthMethod;
   tokenSignedResponseAlg?: string;
   signInResolver?: SignInResolver<OidcAuthResult>;
   authHandler: AuthHandler<OidcAuthResult>;
@@ -143,6 +146,8 @@ export class OidcAuthProvider implements OAuthHandlers {
       client_secret: options.clientSecret,
       redirect_uris: [options.callbackUrl],
       response_types: ['code'],
+      token_endpoint_auth_method:
+        options.tokenEndpointAuthMethod || 'client_secret_basic',
       id_token_signed_response_alg: options.tokenSignedResponseAlg || 'RS256',
       scope: options.scope || '',
     });
@@ -179,17 +184,15 @@ export class OidcAuthProvider implements OAuthHandlers {
   // Then populate the profile with it
   private async handleResult(result: OidcAuthResult): Promise<OAuthResponse> {
     const { profile } = await this.authHandler(result, this.resolverContext);
-    const response: OAuthResponse = {
-      providerInfo: {
-        idToken: result.tokenset.id_token,
-        accessToken: result.tokenset.access_token!,
-        scope: result.tokenset.scope!,
-        expiresInSeconds: result.tokenset.expires_in,
-      },
-      profile,
-    };
+
+    const expiresInSeconds =
+      result.tokenset.expires_in === undefined
+        ? BACKSTAGE_SESSION_EXPIRATION
+        : Math.min(result.tokenset.expires_in, BACKSTAGE_SESSION_EXPIRATION);
+
+    let backstageIdentity = undefined;
     if (this.signInResolver) {
-      response.backstageIdentity = await this.signInResolver(
+      backstageIdentity = await this.signInResolver(
         {
           result,
           profile,
@@ -198,7 +201,16 @@ export class OidcAuthProvider implements OAuthHandlers {
       );
     }
 
-    return response;
+    return {
+      backstageIdentity,
+      providerInfo: {
+        idToken: result.tokenset.id_token,
+        accessToken: result.tokenset.access_token!,
+        scope: result.tokenset.scope!,
+        expiresInSeconds,
+      },
+      profile,
+    };
   }
 }
 
@@ -224,6 +236,9 @@ export const oidc = createAuthProviderIntegration({
           customCallbackUrl ||
           `${globalConfig.baseUrl}/${providerId}/handler/frame`;
         const metadataUrl = envConfig.getString('metadataUrl');
+        const tokenEndpointAuthMethod = envConfig.getOptionalString(
+          'tokenEndpointAuthMethod',
+        ) as ClientAuthMethod;
         const tokenSignedResponseAlg = envConfig.getOptionalString(
           'tokenSignedResponseAlg',
         );
@@ -244,6 +259,7 @@ export const oidc = createAuthProviderIntegration({
           clientId,
           clientSecret,
           callbackUrl,
+          tokenEndpointAuthMethod,
           tokenSignedResponseAlg,
           metadataUrl,
           scope,

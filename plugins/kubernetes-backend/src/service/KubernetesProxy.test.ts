@@ -54,6 +54,10 @@ describe('KubernetesProxy', () => {
       params: {
         path,
       },
+      headers: {
+        'content-type': 'application/json',
+        [HEADER_KUBERNETES_CLUSTER.toLowerCase()]: clusterName,
+      },
       header: jest.fn((key: string) => {
         switch (key) {
           case 'Content-Type': {
@@ -92,6 +96,56 @@ describe('KubernetesProxy', () => {
 
   it('should return a ERROR_NOT_FOUND if no clusters are found', async () => {
     clusterSupplier.getClusters.mockResolvedValue([]);
+    permissionApi.authorize.mockReturnValue(
+      Promise.resolve([{ result: AuthorizeResult.ALLOW }]),
+    );
+
+    const req = buildMockRequest('test', 'api');
+    const { res, next } = getMockRes();
+
+    await expect(
+      proxy.createRequestHandler({ permissionApi })(req, res, next),
+    ).rejects.toThrow(NotFoundError);
+  });
+
+  it('should return a ERROR_NOT_FOUND if multi-cluster & no cluster selected', async () => {
+    clusterSupplier.getClusters.mockResolvedValue([
+      {
+        name: 'local',
+        url: 'http:/localhost:8001',
+        authProvider: 'localKubectlProxy',
+        skipMetricsLookup: true,
+      } as ClusterDetails,
+      {
+        name: 'cluster1',
+        url: 'https://localhost:9999',
+        serviceAccountToken: 'tokenA',
+        authProvider: 'googleServiceAccount',
+      } as ClusterDetails,
+    ]);
+
+    permissionApi.authorize.mockReturnValue(
+      Promise.resolve([{ result: AuthorizeResult.ALLOW }]),
+    );
+
+    const req = buildMockRequest(undefined, 'api');
+    const { res, next } = getMockRes();
+
+    await expect(
+      proxy.createRequestHandler({ permissionApi })(req, res, next),
+    ).rejects.toThrow(NotFoundError);
+  });
+
+  it('should return a ERROR_NOT_FOUND if selected cluster not in config', async () => {
+    clusterSupplier.getClusters.mockResolvedValue([
+      {
+        name: 'cluster1',
+        url: 'https://localhost:9999',
+        serviceAccountToken: 'tokenA',
+        authProvider: 'googleServiceAccount',
+      } as ClusterDetails,
+    ]);
+
     permissionApi.authorize.mockReturnValue(
       Promise.resolve([{ result: AuthorizeResult.ALLOW }]),
     );
@@ -153,6 +207,93 @@ describe('KubernetesProxy', () => {
 
     expect(response.status).toEqual(299);
     expect(response.body).toStrictEqual(apiResponse);
+  });
+
+  it('should pass the exact response from Kubernetes default cluster & no cluster selected in single cluster setup', async () => {
+    const apiResponse = {
+      kind: 'APIVersions',
+      versions: ['v1'],
+      serverAddressByClientCIDRs: [
+        {
+          clientCIDR: '0.0.0.0/0',
+          serverAddress: '192.168.0.1:3333',
+        },
+      ],
+    };
+
+    clusterSupplier.getClusters.mockResolvedValue([
+      {
+        name: 'cluster1',
+        url: 'https://localhost:9999',
+        serviceAccountToken: '',
+        authProvider: 'serviceAccount',
+      },
+    ] as ClusterDetails[]);
+
+    permissionApi.authorize.mockReturnValue(
+      Promise.resolve([{ result: AuthorizeResult.ALLOW }]),
+    );
+
+    authTranslator.decorateClusterDetailsWithAuth.mockResolvedValue({
+      name: 'cluster1',
+      url: 'https://localhost:9999',
+      serviceAccountToken: '',
+      authProvider: 'serviceAccount',
+    } as ClusterDetails);
+
+    const router = Router();
+    router.use('/mountpath', proxy.createRequestHandler({ permissionApi }));
+    const app = express().use(router);
+    const requestPromise = request(app).get('/mountpath/api');
+    worker.use(
+      rest.get('https://localhost:9999/api', (_: any, res: any, ctx: any) =>
+        res(ctx.status(299), ctx.json(apiResponse)),
+      ),
+      rest.all(requestPromise.url, (req: any) => req.passthrough()),
+    );
+
+    const response = await requestPromise;
+
+    expect(response.status).toEqual(299);
+    expect(response.body).toStrictEqual(apiResponse);
+  });
+
+  it('sets host header to support clusters behind name-based virtual hosts', async () => {
+    worker.use(
+      rest.get(
+        'http://localhost:9999/api/v1/namespaces',
+        (req: any, res: any, ctx: any) => {
+          const host = req.headers.get('Host');
+          return host === 'localhost:9999'
+            ? res(ctx.status(200))
+            : res.networkError(`Host '${host}' is not in the cert's altnames`);
+        },
+      ),
+    );
+    permissionApi.authorize.mockResolvedValue([
+      { result: AuthorizeResult.ALLOW },
+    ]);
+    clusterSupplier.getClusters.mockResolvedValue([
+      {
+        name: 'cluster1',
+        url: 'http://localhost:9999',
+        authProvider: '',
+      },
+    ]);
+    authTranslator.decorateClusterDetailsWithAuth.mockImplementation(
+      async x => x,
+    );
+    const app = express().use(
+      Router().use('/mountpath', proxy.createRequestHandler({ permissionApi })),
+    );
+
+    const requestPromise = request(app)
+      .get('/mountpath/api/v1/namespaces')
+      .set(HEADER_KUBERNETES_CLUSTER, 'cluster1');
+    worker.use(rest.all(requestPromise.url, (req: any) => req.passthrough()));
+    const response = await requestPromise;
+
+    expect(response.status).toEqual(200);
   });
 
   it('should default to using a authTranslator provided serviceAccountToken as authorization headers to kubeapi when backstage-kubernetes-auth field is not provided', async () => {
@@ -407,15 +548,17 @@ describe('KubernetesProxy', () => {
     });
 
     worker.use(
-      rest.get('http://localhost:8001/api/v1/namespaces', (_req, res, ctx) => {
-        return res(
-          ctx.status(200),
-          ctx.json({
-            kind: 'NamespaceList',
-            apiVersion: 'v1',
-            items: [],
-          }),
-        );
+      rest.get('http://localhost:8001/api/v1/namespaces', (req, res, ctx) => {
+        return req.headers.get('Authorization')
+          ? res(ctx.status(401))
+          : res(
+              ctx.status(200),
+              ctx.json({
+                kind: 'NamespaceList',
+                apiVersion: 'v1',
+                items: [],
+              }),
+            );
       }),
     );
 
@@ -441,55 +584,6 @@ describe('KubernetesProxy', () => {
       apiVersion: 'v1',
       items: [],
     });
-  });
-
-  it('should return a 400 error if Backstage-Kubernetes-Cluster field isnt provided in request', async () => {
-    worker.use(
-      rest.get('https://localhost:9999/api/v1/namespaces', (_req, res, ctx) => {
-        return res(
-          ctx.status(200),
-          ctx.json({
-            kind: 'NamespaceList',
-            apiVersion: 'v1',
-            items: [],
-          }),
-        );
-      }),
-    );
-
-    permissionApi.authorize.mockReturnValue(
-      Promise.resolve([{ result: AuthorizeResult.ALLOW }]),
-    );
-
-    clusterSupplier.getClusters.mockResolvedValue([
-      {
-        name: 'cluster1',
-        url: 'https://localhost:9999',
-        authProvider: 'googleServiceAccount',
-      },
-    ] as ClusterDetails[]);
-
-    authTranslator.decorateClusterDetailsWithAuth.mockResolvedValue({
-      name: 'cluster1',
-      url: 'https://localhost:9999',
-      serviceAccountToken: 'tokenA',
-      authProvider: 'googleServiceAccount',
-    } as ClusterDetails);
-
-    const router = Router();
-    router.use('/mountpath', proxy.createRequestHandler({ permissionApi }));
-    router.use(errorHandler());
-    const app = express().use(router);
-
-    const requestPromise = request(app)
-      .get('/mountpath/api/v1/namespaces')
-      .set(HEADER_KUBERNETES_AUTH, 'tokenB');
-
-    worker.use(rest.all(requestPromise.url, (req: any) => req.passthrough()));
-
-    const response = await requestPromise;
-
-    expect(response.status).toEqual(400);
   });
 
   it('returns a 500 error if authTranslator errors out and Backstage-Kubernetes-Authorization field is not provided', async () => {
@@ -545,5 +639,47 @@ describe('KubernetesProxy', () => {
     const response = await requestPromise;
 
     expect(response.status).toEqual(500);
+  });
+
+  it('should get res through proxy with cluster url has sub path', async () => {
+    worker.use(
+      rest.get(
+        'http://localhost:9999/subpath/api/v1/namespaces',
+        (_req, res, ctx) => {
+          return res(
+            ctx.status(200),
+            ctx.json({
+              kind: 'NamespaceList',
+              apiVersion: 'v1',
+              items: [],
+            }),
+          );
+        },
+      ),
+    );
+    permissionApi.authorize.mockResolvedValue([
+      { result: AuthorizeResult.ALLOW },
+    ]);
+    clusterSupplier.getClusters.mockResolvedValue([
+      {
+        name: 'cluster1',
+        url: 'http://localhost:9999/subpath',
+        authProvider: '',
+      },
+    ]);
+    authTranslator.decorateClusterDetailsWithAuth.mockImplementation(
+      async x => x,
+    );
+    const app = express().use(
+      Router().use('/mountpath', proxy.createRequestHandler({ permissionApi })),
+    );
+
+    const requestPromise = request(app)
+      .get('/mountpath/api/v1/namespaces')
+      .set(HEADER_KUBERNETES_CLUSTER, 'cluster1');
+    worker.use(rest.all(requestPromise.url, (req: any) => req.passthrough()));
+    const response = await requestPromise;
+
+    expect(response.status).toEqual(200);
   });
 });
